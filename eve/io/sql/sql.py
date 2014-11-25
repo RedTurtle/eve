@@ -201,9 +201,8 @@ class SQL(DataLayer):
 
         if hasattr(lookup.get(config.ID_FIELD), '_sa_instance_state') \
                 or isinstance(lookup.get(config.ID_FIELD), InstrumentedList):
-            # very dummy way to get the related object
-            # that commes from embeddable parameter
-            return lookup.get(config.ID_FIELD)
+            document = lookup.get(config.ID_FIELD)
+            return SQLAResult(document, fields) if document else None
         else:
             filter_ = self.combine_queries(filter_,
                                            parse_dictionary(lookup, model))
