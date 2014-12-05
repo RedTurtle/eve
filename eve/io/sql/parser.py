@@ -38,10 +38,19 @@ def parse_dictionary(filter_dict, model):
     """
     if len(filter_dict) == 0:
         return []
+
     conditions = []
 
     for k, v in filter_dict.items():
-        # first check if we have FK or PK before using ilike
+        # firts let's check with the expression parser
+
+        try:
+            conditions += parse('{0}{1}'.format(k, v), model)
+        except ParseError:
+            pass
+        else:
+            continue
+
         attr = getattr(model, k)
 
         if isinstance(attr, AssociationProxy):
@@ -49,7 +58,6 @@ def parse_dictionary(filter_dict, model):
 
         elif hasattr(attr, 'property') and \
                 hasattr(attr.property, 'remote_side'):  # a relation
-
             for fk in attr.property.remote_side:
                 conditions.append(sqla_op.eq(fk, v))
 
@@ -62,7 +70,6 @@ def parse_dictionary(filter_dict, model):
                     new_filter = attr.in_(v)
                 else:
                     new_filter = sqla_op.eq(attr, v)
-
             conditions.append(new_filter)
 
     return conditions
