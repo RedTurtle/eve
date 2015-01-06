@@ -46,10 +46,11 @@ class SQLAResult(collections.MutableMapping):
                 raise KeyError(key)
 
     def __setitem__(self, key, value):
-        if not isinstance(value, SQLAResult) \
-                or (isinstance(value, list) \
-                    and not isinstance(value[0], SQLAResult)):
-            setattr(self._result, key, value)
+        if isinstance(value, SQLAResult):
+            return
+        if isinstance(value, list) and isinstance(value[0], SQLAResult):
+            return
+        setattr(self._result, key, value)
         if key not in self._fields:
             self._fields.append(key)
 
