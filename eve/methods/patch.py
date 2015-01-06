@@ -36,10 +36,12 @@ def patch(resource, payload=None, **lookup):
     .. versionchanged:: 0.5
        Split into patch() and patch_internal().
     """
-    return patch_internal(resource, payload, concurrency_check=True, **lookup)
+    return patch_internal(resource, payload, concurrency_check=True,
+                          skip_validation=False, **lookup)
 
 
-def patch_internal(resource, payload=None, concurrency_check=False, **lookup):
+def patch_internal(resource, payload=None, concurrency_check=False,
+                   skip_validation=False, **lookup):
     """ Intended for internal patch calls, this method is not rate limited,
     authentication is not checked, pre-request events are not raised, and
     concurrency checking is optional. Performs a document patch/update.
@@ -57,9 +59,12 @@ def patch_internal(resource, payload=None, concurrency_check=False, **lookup):
                     Please be advised that in order to successfully use this
                     option, a request context must be available.
     :param concurrency_check: concurrency check switch (bool)
+    :param skip_validation: skip payload validation before write (bool)
     :param **lookup: document lookup query.
 
     .. versionchanged:: 0.5
+       Updating nested document fields does not overwrite the nested document
+       itself (#519).
        Push updates to the OpLog.
        Original patch() has been split into patch() and patch_internal().
        You can now pass a pre-defined custom payload to the funcion.
@@ -125,7 +130,8 @@ def patch_internal(resource, payload=None, concurrency_check=False, **lookup):
 
     resource_def = app.config['DOMAIN'][resource]
     schema = resource_def['schema']
-    validator = app.validator(schema, resource)
+    if not skip_validation:
+        validator = app.validator(schema, resource)
 
     object_id = original[config.ID_FIELD]
     last_modified = None
@@ -142,7 +148,11 @@ def patch_internal(resource, payload=None, concurrency_check=False, **lookup):
 
     try:
         updates = parse(payload, resource)
-        validation = validator.validate_update(updates, object_id, original)
+        if skip_validation:
+            validation = True
+        else:
+            validation = validator.validate_update(updates, object_id,
+                                                   original)
         if validation:
             # sneak in a shadow copy if it wasn't already there
             late_versioning_catch(original, resource)
@@ -165,6 +175,7 @@ def patch_internal(resource, payload=None, concurrency_check=False, **lookup):
             getattr(app, "on_update")(resource, updates, original)
             getattr(app, "on_update_%s" % resource)(updates, original)
 
+            updates = resolve_nested_documents(updates, updated)
             updated.update(updates)
 
             if config.IF_MATCH:
@@ -214,3 +225,23 @@ def patch_internal(resource, payload=None, concurrency_check=False, **lookup):
     response = marshal_write_response(response, resource)
 
     return response, last_modified, etag, status
+
+
+def resolve_nested_documents(updates, original):
+    """ Nested document updates are merged with the original contents
+    we don't overwrite the whole thing. See #519 for details.
+
+    .. versionadded:: 0.5
+    """
+    r = {}
+    for field, value in updates.items():
+        if isinstance(value, dict):
+            orig_value = original.setdefault(field, {})
+            if orig_value is None:
+                r[field] = value
+            else:
+                orig_value.update(resolve_nested_documents(value, orig_value))
+                r[field] = orig_value
+        else:
+            r[field] = value
+    return r

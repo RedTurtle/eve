@@ -12,7 +12,9 @@
     :license: BSD, see LICENSE for more details.
 """
 
-from eve.utils import config
+import copy
+from collections import Mapping
+from eve.utils import config, str_type
 from bson import ObjectId
 from flask import current_app as app
 from cerberus import Validator
@@ -164,12 +166,18 @@ class Validator(Validator):
                     " with fields '%s' and '%s'" %
                     (value_field, version_field))
         else:
-            query = {data_relation['field']: value}
-            if not app.data.find_one(data_relation['resource'], None, **query):
-                self._error(
-                    field,
-                    "value '%s' must exist in resource '%s', field '%s'." %
-                    (value, data_relation['resource'], data_relation['field']))
+            if not isinstance(value, list):
+                value = [value]
+
+            data_resource = data_relation['resource']
+            for item in value:
+                    query = {data_relation['field']: item}
+                    if not app.data.find_one(data_resource, None, **query):
+                        self._error(
+                            field,
+                            "value '%s' must exist in resource"
+                            " '%s', field '%s'." %
+                            (item, data_resource, data_relation['field']))
 
     def _validate_type_objectid(self, field, value):
         """ Enables validation for `objectid` data type.
@@ -189,20 +197,50 @@ class Validator(Validator):
                         % value)
 
     def _validate_readonly(self, read_only, field, value):
-        """ Since default values are now resolved before validation we make
-        sure that a value for a read-only field is considered legit if it
-        matches an eventual 'default' setting for the field.
-
+        """
         .. versionchanged:: 0.5
+           Not taking defaul values in consideration anymore since they are now
+           being resolved after validation (#353).
            Consider the original value if available (#479).
 
         .. versionadded:: 0.4
         """
-        default = self.schema[field].get('default')
         original_value = self._original_document.get(field) \
             if self._original_document else None
-        if value not in (default, original_value):
+        if value != original_value:
             super(Validator, self)._validate_readonly(read_only, field, value)
+
+    def _validate_dependencies(self, document, dependencies, field,
+                               break_on_error=False):
+        """ With PATCH method, the validator is only provided with the updated
+        fields. If an updated field depends on another field in order to be
+        edited and the other field was previously set, the validator doesn't
+        see it and rejects the update. In order to avoid that we merge the
+        proposed changes with the original document before validating
+        dependencies.
+
+        .. versionadded:: 0.5
+           If a dependency has a default value, skip it as Cerberus does not
+           have the notion of default values and would report a missing
+           dependency (#353).
+           Fix for #363 (see docstring).
+        """
+        # Ensure `dependencies` is a list
+        if isinstance(dependencies, str_type):
+            dependencies = [dependencies]
+        elif isinstance(dependencies, Mapping):
+            dependencies = dependencies.keys()
+
+        # Filter out dependencies with default values
+        dependencies = [d for d in dependencies
+                        if self.schema[d].get('default') is None]
+
+        dcopy = None
+        if self._original_document:
+            dcopy = copy.copy(document)
+            dcopy.update(self._original_document)
+        super(Validator, self)._validate_dependencies(dcopy or document,
+                                                      dependencies, field)
 
     def _validate_type_media(self, field, value):
         """ Enables validation for `media` data type.

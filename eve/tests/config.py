@@ -65,6 +65,8 @@ class TestConfig(TestBase):
         self.assertEqual(self.app.config['QUERY_MAX_RESULTS'], 'max_results')
         self.assertEqual(self.app.config['QUERY_EMBEDDED'], 'embedded')
 
+        self.assertEqual(self.app.config['JSON_SORT_KEYS'], False)
+
     def test_settings_as_dict(self):
         my_settings = {'API_VERSION': 'override!', 'DOMAIN': {'contacts': {}}}
         self.app = Eve(settings=my_settings)
@@ -314,10 +316,14 @@ class TestConfig(TestBase):
 
         del(self.domain['internal_transactions'])
         for resource, settings in self.domain.items():
-            self.assertEqual(settings['url'],
-                             self.app.config['URLS'][resource])
             self.assertEqual(settings['datasource'],
                              self.app.config['SOURCES'][resource])
+
+    def test_pretty_resource_urls(self):
+        """ test that regexes are stripped out of urls and #466 is fixed. """
+        resource_url = self.app.config['URLS']['peopleinvoices']
+        pretty_url = 'users/<person>/invoices'
+        self.assertEqual(resource_url, pretty_url)
 
     def test_url_rules(self):
         map_adapter = self.app.url_map.bind('')

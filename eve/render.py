@@ -194,7 +194,10 @@ def _prepare_response(resource, dct, last_modified=None, etag=None,
 
         methods = app.make_default_options_response().headers.get('allow', '')
 
-        if '*' in domains or origin in domains:
+        if '*' in domains:
+            resp.headers.add('Access-Control-Allow-Origin', origin)
+            resp.headers.add('Vary', 'Origin')
+        elif origin in domains:
             resp.headers.add('Access-Control-Allow-Origin', origin)
         else:
             resp.headers.add('Access-Control-Allow-Origin', '')
@@ -251,7 +254,8 @@ def render_json(data):
     .. versionchanged:: 0.1.0
        Support for optional HATEOAS.
     """
-    return json.dumps(data, cls=app.data.json_encoder_class)
+    return json.dumps(data, cls=app.data.json_encoder_class,
+                      sort_keys=config.JSON_SORT_KEYS)
 
 
 def render_xml(data):

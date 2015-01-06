@@ -37,10 +37,12 @@ def put(resource, payload=None, **lookup):
     .. versionchanged:: 0.5
        Split into put() and put_internal().
     """
-    return put_internal(resource, payload, concurrency_check=True, **lookup)
+    return put_internal(resource, payload, concurrency_check=True,
+                        skip_validation=False, **lookup)
 
 
-def put_internal(resource, payload=None, concurrency_check=False, **lookup):
+def put_internal(resource, payload=None, concurrency_check=False,
+                 skip_validation=False, **lookup):
     """ Intended for internal put calls, this method is not rate limited,
     authentication is not checked, pre-request events are not raised, and
     concurrency checking is optional. Performs a document replacement.
@@ -58,9 +60,13 @@ def put_internal(resource, payload=None, concurrency_check=False, **lookup):
                     Please be advised that in order to successfully use this
                     option, a request context must be available.
     :param concurrency_check: concurrency check switch (bool)
+    :param skip_validation: skip payload validation before write (bool)
     :param **lookup: document lookup query.
 
     .. versionchanged:: 0.5
+       Back to resolving default values after validaton as now the validator
+       can properly validate dependency even when some have default values. See
+       #353.
        Original put() has been split into put() and put_internal().
        You can now pass a pre-defined custom payload to the funcion.
        ETAG is now stored with the document (#369).
@@ -97,7 +103,8 @@ def put_internal(resource, payload=None, concurrency_check=False, **lookup):
     """
     resource_def = app.config['DOMAIN'][resource]
     schema = resource_def['schema']
-    validator = app.validator(schema, resource)
+    if not skip_validation:
+        validator = app.validator(schema, resource)
 
     if payload is None:
         payload = payload_()
@@ -122,8 +129,10 @@ def put_internal(resource, payload=None, concurrency_check=False, **lookup):
 
     try:
         document = parse(payload, resource)
-        resolve_default_values(document, resource_def['defaults'])
-        validation = validator.validate_replace(document, object_id)
+        if skip_validation:
+            validation = True
+        else:
+            validation = validator.validate_replace(document, object_id)
         if validation:
             # sneak in a shadow copy if it wasn't already there
             late_versioning_catch(original, resource)
@@ -140,6 +149,7 @@ def put_internal(resource, payload=None, concurrency_check=False, **lookup):
                 document[config.ID_FIELD] = object_id
 
             resolve_user_restricted_access(document, resource)
+            resolve_default_values(document, resource_def['defaults'])
             store_media_files(document, resource, original)
             resolve_document_version(document, resource, 'PUT', original)
 

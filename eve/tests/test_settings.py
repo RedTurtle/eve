@@ -114,7 +114,13 @@ contacts = {
         'keyschema_dict': {
             'type': 'dict',
             'keyschema': {'type': 'integer'}
-        }
+        },
+        'aninteger': {
+            'type': 'integer',
+        },
+        'afloat': {
+            'type': 'float',
+        },
     }
 }
 
@@ -134,6 +140,10 @@ invoices = {
         'inv_number': {'type': 'string'},
         'person': {
             'type': 'objectid',
+            'data_relation': {'resource': 'contacts'}
+        },
+        'invoicing_contacts': {
+            'type': 'list',
             'data_relation': {'resource': 'contacts'}
         }
     }
